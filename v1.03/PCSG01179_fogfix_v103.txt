@@ -1,0 +1,208 @@
+# Catherine: Full Body (PCSG01179), v1.03 eboot: the Japanese 1.03 update and the English rePatch built on it
+# (both have identical code here). Do not use with the v1.00 eboot.
+# Fixes the freeze on the "Stage 3 Torture Chamber" card at the start of night 3 (Vita3K issue #3002,
+# endless "Invalid read of uint32_t at address: 0x4c"). The same lookup miss also freezes the Stage 6
+# (Clock Tower) load, and this fixes that too.
+#
+# The game has no runtime shader compiler. Two caches, filled from the precompiled shaders in Shader.cpk
+# and keyed by the material key, give a material its shaders (0x8132152c) and its vertex+fragment program
+# pair (0x813217d8). Their create functions are stubs returning 0, so a key that is not in the cache gets
+# a NULL program. On night 3 a job thread builds the Nightmare model's material keys before the
+# Nightmare environment turns fog off, so it asks for a fog variant (0009c010/01408933) that is not in
+# the caches. On hardware that job is slower and fog is already off when it gets there.
+#
+# For both caches this rewrites the miss path: retry once with the fog bits cleared (key word 1 bit 0 and
+# the fog mode bits 0x33000000 of word 2, which the key builder only sets when fog is on), then run the
+# original miss code. To make room, three stores of 0 into the node that was just memset are dropped and
+# one base address load is computed from the lock pointer. Lookups that hit are unchanged.
+# Generated and checked against the original code by fog_fallback.py.
+#
+# shader cache lookup, original:
+#   813215a6: 201c       adds     r0, r4, #0
+#   813215a8: 40f061fe   bl       #0x8136226e
+#   813215ac: 2820       movs     r0, #0x28
+#   813215ae: 15f0ebf8   bl       #0x81336788
+#   813215b2: 051c       adds     r5, r0, #0
+#   813215b4: 0021       movs     r1, #0
+#   813215b6: 2822       movs     r2, #0x28
+#   813215b8: 19f11cef   blx      #0x8143b3f4
+#   813215bc: 281d       adds     r0, r5, #4
+#   813215be: 311c       adds     r1, r6, #0
+#   813215c0: 1822       movs     r2, #0x18
+#   813215c2: 19f120ef   blx      #0x8143b404
+#   813215c6: 301c       adds     r0, r6, #0
+#   813215c8: 29f038fe   bl       #0x8134b23c
+#   813215cc: e861       str      r0, [r5, #0x1c]
+#   813215ce: 002c       cmp      r4, #0
+#   813215d0: 02d0       beq      #0x813215d8
+#   813215d2: 201c       adds     r0, r4, #0
+#   813215d4: 40f044fe   bl       #0x81362260
+#   813215d8: 0020       movs     r0, #0
+#   813215da: 2862       str      r0, [r5, #0x20]
+#   813215dc: 47f63070   movw     r0, #0x7f30
+#   813215e0: c8f28010   movt     r0, #0x8180
+#   813215e4: 816f       ldr      r1, [r0, #0x78]
+#   813215e6: 11b1       cbz      r1, #0x813215ee
+#   813215e8: 6962       str      r1, [r5, #0x24]
+#   813215ea: 0d62       str      r5, [r1, #0x20]
+#   813215ec: 01e0       b        #0x813215f2
+#   813215ee: 0020       movs     r0, #0
+#   813215f0: 6862       str      r0, [r5, #0x24]
+#   813215f2: 47f63070   movw     r0, #0x7f30
+#   813215f6: c8f28010   movt     r0, #0x8180
+#   813215fa: 8567       str      r5, [r0, #0x78]
+#   813215fc: 14b1       cbz      r4, #0x81321604
+#   813215fe: 201c       adds     r0, r4, #0
+#   81321600: 40f035fe   bl       #0x8136226e
+#   81321604: 47f63070   movw     r0, #0x7f30
+#   81321608: c8f28010   movt     r0, #0x8180
+#   8132160c: 0169       ldr      r1, [r0, #0x10]
+#   8132160e: 11f00070   ands     r0, r1, #0x2000000
+#   81321612: 05d0       beq      #0x81321620
+#   81321614: 11f08070   ands     r0, r1, #0x1000000
+#   81321618: 02d0       beq      #0x81321620
+#   8132161a: 281c       adds     r0, r5, #0
+#   8132161c: 02f024fe   bl       #0x81324268
+# shader cache lookup, patched:
+#   813215a6: 18f0010f   tst.w    r8, #1
+#   813215aa: 06d0       beq      #0x813215ba
+#   813215ac: 28f00108   bic      r8, r8, #1
+#   813215b0: 2af04c5a   bic      sl, sl, #0x33000000
+#   813215b4: 54f8045c   ldr      r5, [r4, #-0x4]
+#   813215b8: d4e7       b        #0x81321564
+#   813215ba: 201c       adds     r0, r4, #0
+#   813215bc: 40f057fe   bl       #0x8136226e
+#   813215c0: 2820       movs     r0, #0x28
+#   813215c2: 15f0e1f8   bl       #0x81336788
+#   813215c6: 051c       adds     r5, r0, #0
+#   813215c8: 0021       movs     r1, #0
+#   813215ca: 2822       movs     r2, #0x28
+#   813215cc: 19f112ef   blx      #0x8143b3f4
+#   813215d0: 281d       adds     r0, r5, #4
+#   813215d2: 311c       adds     r1, r6, #0
+#   813215d4: 1822       movs     r2, #0x18
+#   813215d6: 19f116ef   blx      #0x8143b404
+#   813215da: 301c       adds     r0, r6, #0
+#   813215dc: 29f02efe   bl       #0x8134b23c
+#   813215e0: e861       str      r0, [r5, #0x1c]
+#   813215e2: 002c       cmp      r4, #0
+#   813215e4: 02d0       beq      #0x813215ec
+#   813215e6: 201c       adds     r0, r4, #0
+#   813215e8: 40f03afe   bl       #0x81362260
+#   813215ec: a4f17c00   sub.w    r0, r4, #0x7c
+#   813215f0: 816f       ldr      r1, [r0, #0x78]
+#   813215f2: 09b1       cbz      r1, #0x813215f8
+#   813215f4: 6962       str      r1, [r5, #0x24]
+#   813215f6: 0d62       str      r5, [r1, #0x20]
+#   813215f8: 8567       str      r5, [r0, #0x78]
+#   813215fa: 14b1       cbz      r4, #0x81321602
+#   813215fc: 201c       adds     r0, r4, #0
+#   813215fe: 40f036fe   bl       #0x8136226e
+#   81321602: 47f63070   movw     r0, #0x7f30
+#   81321606: c8f28010   movt     r0, #0x8180
+#   8132160a: 0169       ldr      r1, [r0, #0x10]
+#   8132160c: 11f00070   ands     r0, r1, #0x2000000
+#   81321610: 06d0       beq      #0x81321620
+#   81321612: 11f08070   ands     r0, r1, #0x1000000
+#   81321616: 03d0       beq      #0x81321620
+#   81321618: 281c       adds     r0, r5, #0
+#   8132161a: 02f025fe   bl       #0x81324268
+#   8132161e: 00bf       nop      
+# program pair cache lookup, original:
+#   81321880: 381c       adds     r0, r7, #0
+#   81321882: 40f0f4fc   bl       #0x8136226e
+#   81321886: 2c20       movs     r0, #0x2c
+#   81321888: 14f07eff   bl       #0x81336788
+#   8132188c: 041c       adds     r4, r0, #0
+#   8132188e: 0021       movs     r1, #0
+#   81321890: 2c22       movs     r2, #0x2c
+#   81321892: 19f1b0ed   blx      #0x8143b3f4
+#   81321896: 14f12000   adds.w   r0, r4, #0x20
+#   8132189a: 40f087fc   bl       #0x813621ac
+#   8132189e: 201d       adds     r0, r4, #4
+#   813218a0: 4946       mov      r1, sb
+#   813218a2: 1822       movs     r2, #0x18
+#   813218a4: 19f1aeed   blx      #0x8143b404
+#   813218a8: 4846       mov      r0, sb
+#   813218aa: 29f06bf8   bl       #0x8134a984
+#   813218ae: e061       str      r0, [r4, #0x1c]
+#   813218b0: 002f       cmp      r7, #0
+#   813218b2: 02d0       beq      #0x813218ba
+#   813218b4: 381c       adds     r0, r7, #0
+#   813218b6: 40f0d3fc   bl       #0x81362260
+#   813218ba: 0020       movs     r0, #0
+#   813218bc: 6062       str      r0, [r4, #0x24]
+#   813218be: 47f63070   movw     r0, #0x7f30
+#   813218c2: c8f28010   movt     r0, #0x8180
+#   813218c6: 016f       ldr      r1, [r0, #0x70]
+#   813218c8: 11b1       cbz      r1, #0x813218d0
+#   813218ca: a162       str      r1, [r4, #0x28]
+#   813218cc: 4c62       str      r4, [r1, #0x24]
+#   813218ce: 01e0       b        #0x813218d4
+#   813218d0: 0020       movs     r0, #0
+#   813218d2: a062       str      r0, [r4, #0x28]
+#   813218d4: 47f63070   movw     r0, #0x7f30
+#   813218d8: c8f28010   movt     r0, #0x8180
+#   813218dc: 0467       str      r4, [r0, #0x70]
+#   813218de: 17b1       cbz      r7, #0x813218e6
+#   813218e0: 381c       adds     r0, r7, #0
+#   813218e2: 40f0c4fc   bl       #0x8136226e
+#   813218e6: 47f63070   movw     r0, #0x7f30
+#   813218ea: c8f28010   movt     r0, #0x8180
+#   813218ee: 0169       ldr      r1, [r0, #0x10]
+#   813218f0: 11f00070   ands     r0, r1, #0x2000000
+#   813218f4: 05d0       beq      #0x81321902
+#   813218f6: 11f08070   ands     r0, r1, #0x1000000
+#   813218fa: 02d0       beq      #0x81321902
+#   813218fc: 201c       adds     r0, r4, #0
+#   813218fe: 02f0aafc   bl       #0x81324256
+# program pair cache lookup, patched:
+#   81321880: 15f0010f   tst.w    r5, #1
+#   81321884: 06d0       beq      #0x81321894
+#   81321886: 25f00105   bic      r5, r5, #1
+#   8132188a: 26f04c56   bic      r6, r6, #0x33000000
+#   8132188e: 57f8048c   ldr      r8, [r7, #-0x4]
+#   81321892: bfe7       b        #0x81321814
+#   81321894: 381c       adds     r0, r7, #0
+#   81321896: 40f0eafc   bl       #0x8136226e
+#   8132189a: 2c20       movs     r0, #0x2c
+#   8132189c: 14f074ff   bl       #0x81336788
+#   813218a0: 041c       adds     r4, r0, #0
+#   813218a2: 0021       movs     r1, #0
+#   813218a4: 2c22       movs     r2, #0x2c
+#   813218a6: 19f1a6ed   blx      #0x8143b3f4
+#   813218aa: 14f12000   adds.w   r0, r4, #0x20
+#   813218ae: 40f07dfc   bl       #0x813621ac
+#   813218b2: 201d       adds     r0, r4, #4
+#   813218b4: 4946       mov      r1, sb
+#   813218b6: 1822       movs     r2, #0x18
+#   813218b8: 19f1a4ed   blx      #0x8143b404
+#   813218bc: 4846       mov      r0, sb
+#   813218be: 29f061f8   bl       #0x8134a984
+#   813218c2: e061       str      r0, [r4, #0x1c]
+#   813218c4: 002f       cmp      r7, #0
+#   813218c6: 02d0       beq      #0x813218ce
+#   813218c8: 381c       adds     r0, r7, #0
+#   813218ca: 40f0c9fc   bl       #0x81362260
+#   813218ce: a7f17400   sub.w    r0, r7, #0x74
+#   813218d2: 016f       ldr      r1, [r0, #0x70]
+#   813218d4: 09b1       cbz      r1, #0x813218da
+#   813218d6: a162       str      r1, [r4, #0x28]
+#   813218d8: 4c62       str      r4, [r1, #0x24]
+#   813218da: 0467       str      r4, [r0, #0x70]
+#   813218dc: 17b1       cbz      r7, #0x813218e4
+#   813218de: 381c       adds     r0, r7, #0
+#   813218e0: 40f0c5fc   bl       #0x8136226e
+#   813218e4: 47f63070   movw     r0, #0x7f30
+#   813218e8: c8f28010   movt     r0, #0x8180
+#   813218ec: 0169       ldr      r1, [r0, #0x10]
+#   813218ee: 11f00070   ands     r0, r1, #0x2000000
+#   813218f2: 06d0       beq      #0x81321902
+#   813218f4: 11f08070   ands     r0, r1, #0x1000000
+#   813218f8: 03d0       beq      #0x81321902
+#   813218fa: 201c       adds     r0, r4, #0
+#   813218fc: 02f0abfc   bl       #0x81324256
+#   81321900: 00bf       nop      
+[eboot.bin]
+0:0x3215A6 0x18 0xF0 0x01 0x0F 0x06 0xD0 0x28 0xF0 0x01 0x08 0x2A 0xF0 0x4C 0x5A 0x54 0xF8 0x04 0x5C 0xD4 0xE7 0x20 0x1C 0x40 0xF0 0x57 0xFE 0x28 0x20 0x15 0xF0 0xE1 0xF8 0x05 0x1C 0x00 0x21 0x28 0x22 0x19 0xF1 0x12 0xEF 0x28 0x1D 0x31 0x1C 0x18 0x22 0x19 0xF1 0x16 0xEF 0x30 0x1C 0x29 0xF0 0x2E 0xFE 0xE8 0x61 0x00 0x2C 0x02 0xD0 0x20 0x1C 0x40 0xF0 0x3A 0xFE 0xA4 0xF1 0x7C 0x00 0x81 0x6F 0x09 0xB1 0x69 0x62 0x0D 0x62 0x85 0x67 0x14 0xB1 0x20 0x1C 0x40 0xF0 0x36 0xFE 0x47 0xF6 0x30 0x70 0xC8 0xF2 0x80 0x10 0x01 0x69 0x11 0xF0 0x00 0x70 0x06 0xD0 0x11 0xF0 0x80 0x70 0x03 0xD0 0x28 0x1C 0x02 0xF0 0x25 0xFE 0x00 0xBF
+0:0x321880 0x15 0xF0 0x01 0x0F 0x06 0xD0 0x25 0xF0 0x01 0x05 0x26 0xF0 0x4C 0x56 0x57 0xF8 0x04 0x8C 0xBF 0xE7 0x38 0x1C 0x40 0xF0 0xEA 0xFC 0x2C 0x20 0x14 0xF0 0x74 0xFF 0x04 0x1C 0x00 0x21 0x2C 0x22 0x19 0xF1 0xA6 0xED 0x14 0xF1 0x20 0x00 0x40 0xF0 0x7D 0xFC 0x20 0x1D 0x49 0x46 0x18 0x22 0x19 0xF1 0xA4 0xED 0x48 0x46 0x29 0xF0 0x61 0xF8 0xE0 0x61 0x00 0x2F 0x02 0xD0 0x38 0x1C 0x40 0xF0 0xC9 0xFC 0xA7 0xF1 0x74 0x00 0x01 0x6F 0x09 0xB1 0xA1 0x62 0x4C 0x62 0x04 0x67 0x17 0xB1 0x38 0x1C 0x40 0xF0 0xC5 0xFC 0x47 0xF6 0x30 0x70 0xC8 0xF2 0x80 0x10 0x01 0x69 0x11 0xF0 0x00 0x70 0x06 0xD0 0x11 0xF0 0x80 0x70 0x03 0xD0 0x20 0x1C 0x02 0xF0 0xAB 0xFC 0x00 0xBF
